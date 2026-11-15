@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `shared::MusicCarriesOn()`: a game's option "Music carries on between rounds". With it on, the CD library's
+  CdPlay asked for the tracks already playing lets them play on instead of starting them again (Sega AM2's
+  fighting games ask for the stage's track at every round). Off by default, on in the Enhanced preset.
 - Save unlocks (`Game::saveUnlocks`, for a game's "unlock everything" cheat): the native backup library gives
   the game its save file with fields of it raised (bits set, a count at least so much), and takes out what it
   added when the game writes the file, so that the file kept is the player's own and a count goes on from
