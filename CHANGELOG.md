@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- A custom soundtrack (`port/soundtrack.h`, feature `custom_soundtrack`): the player's own music, or tracks of
+  another disc image they have, played in place of the disc's audio tracks, through the sound chip's CD audio
+  input. Files named after the game's songs (`Game::songs`, `songs.txt`, `--list-songs`) as Ogg Vorbis, FLAC,
+  MP3 or WAV (single-file decoders in `port/decoders/`), `soundtrack.ini` for other names, loops, volumes and
+  discs. `Game::songDiscs` maps another game's disc onto the songs it has: its disc image put in the folder is
+  found by its product number or title and used as it is. `songs.txt` says what plays for each song. The
+  launcher's Sound card has the folder, naming game.cfg's `soundtrack_discs`. The game's memory is the same with it as without. Save states are version 9 (the music's place).
+- `SATRECOMP_LOG_MUSIC=1`: every track a game asks the CD library for, and from where, for naming its songs.
 - The GPU renderer draws VDP1 double interlace (FBCR's DIE, on a double-density picture) at its height: the
   game's coordinates are in the picture's 448 lines, and every polygon is halved down into the framebuffer's
   224, as the hardware writes each field's lines at y / 2. Drawn unhalved, the picture came out twice as tall
