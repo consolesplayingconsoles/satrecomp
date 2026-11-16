@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The GPU renderer draws VDP1 double interlace (FBCR's DIE, on a double-density picture) at its height: the
+  game's coordinates are in the picture's 448 lines, and every polygon is halved down into the framebuffer's
+  224, as the hardware writes each field's lines at y / 2. Drawn unhalved, the picture came out twice as tall
+  from its top (Fighters Megamix's winner close-up: the head at the bottom of the screen). The software
+  renderer already did this.
 - `shared::MusicCarriesOn()`: a game's option "Music carries on between rounds". With it on, the CD library's
   CdPlay asked for the tracks already playing lets them play on instead of starting them again (Sega AM2's
   fighting games ask for the stage's track at every round). Off by default, on in the Enhanced preset.
