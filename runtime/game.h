@@ -73,8 +73,27 @@ struct Page {
     const char *description = "";  // what its row says ("": the menu's own words)
 };
 
+// A piece of the game's music: one of its disc's audio tracks, by the name a custom soundtrack's file for it goes by
+// (port/soundtrack.h: "vf2_akira.flac") and what it is
+struct Song {
+    int track;
+    const char *name;
+    const char *title;
+};
+
+// Another disc whose audio tracks hold some of the game's music (as recorded for another game, often longer): when
+// a custom soundtrack's soundtrack.ini names one (disc = ...), its tracks play for those songs, unless the folder has
+// music of its own for them
+struct SongDisc {
+    const char *product;                     // its product number, as its header gives it ("MK-81041")
+    std::vector<std::pair<int, int>> tracks; // this game's track, and that disc's with the same music
+};
+
 struct Game {
     std::vector<Feature> features;
+    // The disc's music, for a custom soundtrack (port/soundtrack.h); none: its files go by the tracks' numbers alone
+    std::vector<Song> songs;
+    std::vector<SongDisc> songDiscs;
     std::vector<Page> pages;
     // With saveUnlocks.feature on, the backup library (hle_bios.cpp) gives the game its save file with these
     // fields raised, and takes out again what it added when the game writes the file: the game sees all it

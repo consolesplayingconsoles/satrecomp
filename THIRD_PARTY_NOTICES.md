@@ -44,6 +44,19 @@ and LED displays, typed in for recomp-common.
 0.12.1 (Copyright (c) chyyran and its contributors), unchanged, under its own MIT license (stated at its
 top): the functions `port/shading.cpp` takes from the library.
 
+### Sound file decoders (public domain, or MIT / MIT No Attribution)
+
+A custom soundtrack (`port/soundtrack.h`) reads the player's music files with these single-file decoders, kept in
+`port/decoders/` as their projects publish them (each with its licence at its end) and compiled unchanged by
+`port/decoders.cpp`:
+
+| File | Project | Licence |
+| --- | --- | --- |
+| `port/decoders/stb_vorbis.c` | [stb](https://github.com/nothings/stb) `stb_vorbis` 1.22 (commit 2c980bb), by Sean Barrett | Public domain, or MIT |
+| `port/decoders/dr_flac.h` | [dr_libs](https://github.com/mackron/dr_libs) `dr_flac` 0.13.4 (commit dfe8377), by David Reid | Public domain, or MIT No Attribution |
+| `port/decoders/dr_mp3.h` | dr_libs `dr_mp3` 0.7.4 (the same commit), by David Reid, after minimp3 by lieff | Public domain, or MIT No Attribution |
+| `port/decoders/dr_wav.h` | dr_libs `dr_wav` 0.14.6 (the same commit), by David Reid | Public domain, or MIT No Attribution |
+
 ## Downloaded at build time
 
 None of these is stored in this repository.

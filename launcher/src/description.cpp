@@ -220,6 +220,12 @@ const launcher::Description& launcher::describe() {
         d.check = check_disc;
         d.arguments = arguments;
         d.saves_folder = true;
+        // (a custom soundtrack's files: port/soundtrack.h)
+        d.folders = {{"soundtrack", "Custom soundtrack",
+                      "Your own music, played in place of the disc's while the Custom soundtrack feature is on: files named "
+                      "after the songs (the songs.txt the game writes in the folder lists them), or tracks of another disc "
+                      "named in the folder's soundtrack.ini. None chosen: the soundtrack folder in the game's own folder.",
+                      "--soundtrack"}};
         d.display = {
             // (a window unless asked, as in the other ports; in SteamOS's Game Mode the other way round)
             {"fullscreen", "Full screen", "F11 switches while playing.", console_session(), nullptr},
