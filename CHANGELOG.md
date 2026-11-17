@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The launcher's Custom soundtrack row only for a game that has the feature: game.cfg's `custom_soundtrack = yes`
+  (a game whose sources name its songs, `Game::songs`). Fighting Vipers, which has none, showed the row for nothing.
 - A custom soundtrack (`port/soundtrack.h`, feature `custom_soundtrack`): the player's own music, or tracks of
   another disc image they have, played in place of the disc's audio tracks, through the sound chip's CD audio
   input. Files named after the game's songs (`Game::songs`, `songs.txt`, `--list-songs`) as Ogg Vorbis, FLAC,
