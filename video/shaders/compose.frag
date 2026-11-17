@@ -30,6 +30,11 @@ layout(set = 3, binding = 0, std140) uniform FragmentUniforms {
     ivec4 floorSize;     // the rotation screen: lines of a field, dots a line, flags, priority
     ivec4 floorMore;     // its colour offset, the extra bits of its character numbers and palettes, memory access
     uvec4 floorPlanes[4]; // the addresses of the 4x4 planes of its map
+    ivec4 cc;             // colour calculation: x layers that blend with the one below (bit 0 sprites, 1 RBG0 .. 5 NBG3),
+                          // y the sprite condition (0 <=, 1 ==, 2 >=, 3 MSB on), z its value, w the mode (1 added, 2 the
+                          // second screen's ratio)
+    ivec4 ccLayer[2];     // the ratios (the second screen's share, 0..31) by layer: sprites unused, RBG0, NBG0..3, back
+    ivec4 ccSprite[2];    // ... by the sprite data's ratio index
 };
 
 layout(location = 0) out vec4 out_color;
@@ -41,6 +46,19 @@ const ivec4 kFormats[16] = ivec4[16](
     ivec4(10, 13, 2, 1), ivec4(11, 12, 3, 1), ivec4(10, 12, 3, 1), ivec4(9, 12, 3, 1),
     ivec4(7, 7, 1, 0),   ivec4(6, 7, 1, 0),   ivec4(6, 6, 2, 0),   ivec4(6, 0, 0, 0),
     ivec4(8, 7, 1, 0),   ivec4(8, 7, 1, 0),   ivec4(8, 6, 2, 0),   ivec4(8, 0, 0, 0));
+
+// Where each sprite data format keeps its colour calculation ratio index: shift, bits
+const ivec2 kRatioBits[16] = ivec2[16](
+    ivec2(11, 3), ivec2(11, 2), ivec2(11, 3), ivec2(11, 2), ivec2(10, 3), ivec2(11, 1), ivec2(10, 2), ivec2(9, 3),
+    ivec2(0, 0),  ivec2(6, 1),  ivec2(0, 0),  ivec2(6, 2),  ivec2(0, 0),  ivec2(6, 1),  ivec2(0, 0),  ivec2(6, 2));
+
+int spriteRatioOf(int index) {
+    return index < 4 ? ccSprite[0][index] : ccSprite[1][index - 4];
+}
+
+int layerRatioOf(int layer) {
+    return layer < 4 ? ccLayer[0][layer] : ccLayer[1][layer - 4];
+}
 
 int spritePriority(int index) {
     return index < 4 ? priLow[index] : priHigh[index - 4];
@@ -157,6 +175,17 @@ vec4 floorLayer(vec2 at) {
     return vec4(texelFetch(colors, ivec2(int(index & 2047u), 0), 0).rgb, float(priority) / 255.0);
 }
 
+// A layer's pixel in the running for the top and second places (the first of equal priorities keeps its place)
+void consider(int id, int pri, vec3 col, inout int top, inout int topPri, inout vec3 topCol,
+              inout int second, inout int secondPri, inout vec3 secondCol) {
+    if (pri > topPri) {
+        second = top; secondPri = topPri; secondCol = topCol;
+        top = id; topPri = pri; topCol = col;
+    } else if (pri > secondPri) {
+        second = id; secondPri = pri; secondCol = col;
+    }
+}
+
 vec3 pixel(vec2 at) {
     ivec2 cell = clamp(ivec2(floor(at * size.xy)), ivec2(0), ivec2(size.xy) - 1);
     if (cell.x < misc.z || cell.x >= int(size.x) - misc.z) {
@@ -176,6 +205,7 @@ vec3 pixel(vec2 at) {
     int priority = 0;
     int special = 0; // 0: nothing, 1: a pixel, 2: a shadow
     bool shadowBit = false;
+    int spriteRatioIndex = 0;
     bool cut = texelFetch(window, cell, 0).r > 0.5;
     bool rgb = mixed && (word & 0x8000u) != 0u;
     bool rgbNothing = rgb && (type >= 8 ? (word & 0xFFu) == 0u : (type >= 2 && windowUsed && (word & 0x7FFFu) == 0u));
@@ -191,6 +221,8 @@ vec3 pixel(vec2 at) {
         uint colorData = word & ((1u << uint(format.x)) - 1u);
         int priorityIndex = int((word >> uint(format.y)) & ((1u << uint(format.z)) - 1u));
         shadowBit = format.w != 0 && (word & 0x8000u) != 0u;
+        ivec2 ratioBits = kRatioBits[type & 15];
+        spriteRatioIndex = int((word >> uint(ratioBits.x)) & ((1u << uint(ratioBits.y)) - 1u));
         special = (word & 0x7FFFu) == 0u ? 0 : (colorData == (1u << uint(format.x)) - 2u ? 2 : 1);
         if (windowUsed && (sprite.z & 2) != 0 && shadowBit != ((sprite.z & 4) != 0)) {
             shadowBit = true;
@@ -201,16 +233,14 @@ vec3 pixel(vec2 at) {
         }
     }
 
-    // The layer on top
-    int top = 6;
-    int topPriority = 0;
-    vec3 color = backColor.rgb;
-    if ((sprite.z & 8) != 0 && special == 1) {
-        if (priority > 0) {
-            top = 0;
-            color = spriteColor;
-        }
+    // The layer on top, and the one below it (colour calculation blends the two)
+    int top = 6, second = 6;
+    int topPriority = 0, secondPriority = 0;
+    vec3 color = backColor.rgb, below = backColor.rgb;
+    if ((sprite.z & 8) != 0 && special == 1 && priority > 0) {
+        top = 0;
         topPriority = priority;
+        color = spriteColor;
     }
     vec4 layer;
     int layerPriority;
@@ -219,19 +249,42 @@ vec3 pixel(vec2 at) {
         layer = texelFetch(rbg0, cell, 0);
     }
     layerPriority = int(layer.a * 255.0 + 0.5);
-    if (layerPriority > topPriority) { top = 1; topPriority = layerPriority; color = layer.rgb; }
+    consider(1, layerPriority, layer.rgb, top, topPriority, color, second, secondPriority, below);
     layer = texelFetch(nbg0, cell, 0);
     layerPriority = int(layer.a * 255.0 + 0.5);
-    if (layerPriority > topPriority) { top = 2; topPriority = layerPriority; color = layer.rgb; }
+    consider(2, layerPriority, layer.rgb, top, topPriority, color, second, secondPriority, below);
     layer = texelFetch(nbg1, cell, 0);
     layerPriority = int(layer.a * 255.0 + 0.5);
-    if (layerPriority > topPriority) { top = 3; topPriority = layerPriority; color = layer.rgb; }
+    consider(3, layerPriority, layer.rgb, top, topPriority, color, second, secondPriority, below);
     layer = texelFetch(nbg2, cell, 0);
     layerPriority = int(layer.a * 255.0 + 0.5);
-    if (layerPriority > topPriority) { top = 4; topPriority = layerPriority; color = layer.rgb; }
+    consider(4, layerPriority, layer.rgb, top, topPriority, color, second, secondPriority, below);
     layer = texelFetch(nbg3, cell, 0);
     layerPriority = int(layer.a * 255.0 + 0.5);
-    if (layerPriority > topPriority) { top = 5; topPriority = layerPriority; color = layer.rgb; }
+    consider(5, layerPriority, layer.rgb, top, topPriority, color, second, secondPriority, below);
+    // (when the sprite layer is only second: a pixel of it that no layer above hides)
+    if ((sprite.z & 8) != 0 && special == 1 && priority > 0 && top != 0 && priority > secondPriority) {
+        second = 0;
+        secondPriority = priority;
+        below = spriteColor;
+    }
+
+    // Colour calculation: the layer shown is blended with the one below it, if it asks for that: added, or mixed in
+    // the ratio of one of the two layers' registers (the extended mode and the line colour screen are not done)
+    bool calc = ((cc.x >> top) & 1) != 0;
+    if (calc && top == 0) {
+        calc = cc.y == 0 ? priority <= cc.z : cc.y == 1 ? priority == cc.z : cc.y == 2 ? priority >= cc.z : shadowBit;
+    }
+    if (calc) {
+        if ((cc.w & 1) != 0) {
+            color = min(color + below, vec3(1.0));
+        } else {
+            int from = (cc.w & 2) != 0 ? second : top;
+            int ratio = from == 0 ? spriteRatioOf(spriteRatioIndex) : layerRatioOf(from);
+            vec3 t = floor(color * 255.0 + 0.5), b = floor(below * 255.0 + 0.5);
+            color = (b + floor((t - b) * float(ratio) / 32.0)) / 255.0;
+        }
+    }
 
     // A shadow pixel of the sprite layer halves the brightness of the layer shown, if that layer takes shadows
     if (special == 2 || (!windowUsed && shadowBit)) {

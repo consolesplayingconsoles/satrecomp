@@ -82,6 +82,11 @@ struct Frame {
     uint8_t spritePriorities[8] = {};
     bool shadow[7] = {}; // which layers take sprite shadows: sprites (unused), RBG0, NBG0..3, back
     int16_t colorOffset[7][3] = {}; // added to the colour (0..255 a channel) of the layer shown: sprites, RBG0, NBG0..3, back
+    // Colour calculation: which layers blend with the one below (bit 0 sprites .. 5 NBG3), the sprite condition
+    // (0 <=, 1 ==, 2 >=, 3 MSB on) and its value, the mode (1 added, 2 the second screen's ratio), and the ratios (the
+    // second screen's share, 0..31) by layer (sprites unused, RBG0, NBG0..3, back) and by the sprite data's ratio index
+    uint32_t colorCalcEnable = 0, colorCalcCond = 0, colorCalcValue = 0, colorCalcMode = 0;
+    uint8_t colorCalcRatio[7] = {}, spriteRatio[8] = {};
 };
 
 } // namespace satrecomp::video

@@ -33,6 +33,7 @@ struct BGParams {
     bool bitmap = false;
     bool lineColorScreenEnable = false, mosaicEnable = false, colorCalcEnable = false, shadowEnable = false;
     uint8 priorityNumber = 0;
+    uint8 colorCalcRatio = 0; // the second screen's share, 0..31 (the register's 31 - n)
     PriorityMode priorityMode = PriorityMode::PerScreen;
     uint8 specialFunctionSelect = 0;
     uint32 cellSizeShift = 0;               // 1: characters of 2x2 cells
@@ -90,6 +91,8 @@ struct SpriteParams {
     bool useSpriteWindow = false, mixedFormat = false, colorCalcEnable = false;
     uint32 colorDataOffset = 0;
     std::array<uint8, 8> priorities{};
+    std::array<uint8, 8> colorCalcRatios{}; // as above, by the sprite data's ratio bits
+    uint8 colorCalcCond = 0, colorCalcValue = 0; // SPCCCS (0 <=, 1 ==, 2 >=, 3 MSB on) and SPCCN
     bool spriteWindowEnabled = false, spriteWindowInverted = false;
     WindowSet<2> windowSet;
 };
@@ -97,6 +100,7 @@ struct SpriteParams {
 struct LineBackScreenParams {
     uint32 baseAddress = 0;
     bool perLine = false, colorCalcEnable = false, shadowEnable = false;
+    uint8 colorCalcRatio = 0;
 };
 
 struct ColorOffset {
@@ -132,6 +136,11 @@ struct Vdp2Regs {
     LineBackScreenParams lineScreenParams, backScreenParams;
     std::array<bool, 7> colorOffsetEnable{}, colorOffsetSelect{}; // sprites, RBG0, NBG0..3, back
     std::array<ColorOffset, 2> colorOffset;
+    struct {
+        bool additive = false;          // CCMD: add the two screens instead of blending
+        bool secondScreenRatio = false; // CCRTMD: the ratio is the second screen's register
+        bool extended = false;          // EXCCEN
+    } colorCalc;
     struct {
         std::array<bool, 8> colorMatches{};
     } specialFunctionCodes[2];

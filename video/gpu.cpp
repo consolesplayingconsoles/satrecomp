@@ -29,6 +29,9 @@ namespace {
         int32_t floor[4];       // lines of a field, dots a line, flags, priority
         int32_t floorMore[4];   // colour offset, more character number bits, more palette bits, access
         uint32_t floorPlanes[16];
+        int32_t cc[4];          // colour calculation: layers that blend, sprite condition, its value, mode
+        int32_t ccLayer[8];     // the ratios by layer (sprites unused, RBG0, NBG0..3, back)
+        int32_t ccSprite[8];    // ... and by the sprite data's ratio index
     };
 
     constexpr uint32_t kVramWidth = 1024, kVramHeight = 512;
@@ -554,6 +557,16 @@ void Gpu::Draw(const Frame &frame) {
         uniforms.floorMore[2] = static_cast<int32_t>(floor.morePalette);
         uniforms.floorMore[3] = floor.access;
         memcpy(uniforms.floorPlanes, floor.planes, sizeof(uniforms.floorPlanes));
+        uniforms.cc[0] = static_cast<int32_t>(frame.colorCalcEnable);
+        uniforms.cc[1] = static_cast<int32_t>(frame.colorCalcCond);
+        uniforms.cc[2] = static_cast<int32_t>(frame.colorCalcValue);
+        uniforms.cc[3] = static_cast<int32_t>(frame.colorCalcMode);
+        for (int i = 0; i < 7; i++) {
+            uniforms.ccLayer[i] = frame.colorCalcRatio[i];
+        }
+        for (int i = 0; i < 8; i++) {
+            uniforms.ccSprite[i] = frame.spriteRatio[i];
+        }
         // (several samples a pixel when the VDP1's target has more pixels than the output shows)
         const uint32_t samples = std::clamp<uint32_t>((m_spriteHeight * m_scale + m_outputHeight / 2) / m_outputHeight, 1, 4);
         uniforms.misc[1] = static_cast<int32_t>(samples);

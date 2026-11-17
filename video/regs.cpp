@@ -18,6 +18,7 @@ namespace {
         OVPNRA = 0xB8 / 2, RPTAU = 0xBC / 2, WPSX0 = 0xC0 / 2, WCTLA = 0xD0 / 2, WCTLB = 0xD2 / 2, WCTLC = 0xD4 / 2, WCTLD = 0xD6 / 2,
         LWTA0U = 0xD8 / 2, SPCTL = 0xE0 / 2, SDCTL = 0xE2 / 2, CRAOFA = 0xE4 / 2, CRAOFB = 0xE6 / 2, LNCLEN = 0xE8 / 2, SFPRMD = 0xEA / 2,
         CCCTL = 0xEC / 2, PRISA = 0xF0 / 2, PRINA = 0xF8 / 2, PRINB = 0xFA / 2, PRIR = 0xFC / 2, CLOFEN = 0x110 / 2, CLOFSL = 0x112 / 2,
+        CCRSA = 0x100 / 2, CCRNA = 0x108 / 2, CCRNB = 0x10A / 2, CCRR = 0x10C / 2, CCRLB = 0x10E / 2,
         COAR = 0x114 / 2,
     };
 
@@ -241,6 +242,23 @@ void Vdp2Regs::Decode(const uint16 *raw) {
     spriteParams.useSpriteWindow = Bit(raw[SPCTL], 4);
     spriteParams.mixedFormat = Bit(raw[SPCTL], 5);
     spriteParams.colorCalcEnable = Bit(raw[CCCTL], 6);
+    spriteParams.colorCalcCond = static_cast<uint8>(Bits(raw[SPCTL], 12, 13));
+    spriteParams.colorCalcValue = static_cast<uint8>(Bits(raw[SPCTL], 8, 10));
+    // Colour calculation: the ratios are the second screen's share (the register's 31 - n)
+    colorCalc.additive = Bit(raw[CCCTL], 8);
+    colorCalc.secondScreenRatio = Bit(raw[CCCTL], 9);
+    colorCalc.extended = Bit(raw[CCCTL], 10);
+    for (uint32 n = 0; n < 4; n++) {
+        spriteParams.colorCalcRatios[n * 2] = static_cast<uint8>(Bits(raw[CCRSA + n], 0, 4) ^ 31);
+        spriteParams.colorCalcRatios[n * 2 + 1] = static_cast<uint8>(Bits(raw[CCRSA + n], 8, 12) ^ 31);
+    }
+    bgParams[1].colorCalcRatio = static_cast<uint8>(Bits(raw[CCRNA], 0, 4) ^ 31);
+    bgParams[2].colorCalcRatio = static_cast<uint8>(Bits(raw[CCRNA], 8, 12) ^ 31);
+    bgParams[3].colorCalcRatio = static_cast<uint8>(Bits(raw[CCRNB], 0, 4) ^ 31);
+    bgParams[4].colorCalcRatio = static_cast<uint8>(Bits(raw[CCRNB], 8, 12) ^ 31);
+    bgParams[0].colorCalcRatio = static_cast<uint8>(Bits(raw[CCRR], 0, 4) ^ 31);
+    lineScreenParams.colorCalcRatio = static_cast<uint8>(Bits(raw[CCRLB], 0, 4) ^ 31);
+    backScreenParams.colorCalcRatio = static_cast<uint8>(Bits(raw[CCRLB], 8, 12) ^ 31);
     spriteParams.colorDataOffset = Bits(raw[CRAOFB], 4, 6) << 8;
     for (uint32 n = 0; n < 4; n++) {
         bgParams[n + 1].cramOffset = Bits(raw[CRAOFA], n * 4, n * 4 + 2) << 8;

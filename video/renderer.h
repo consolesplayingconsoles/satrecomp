@@ -323,6 +323,7 @@ private:
         std::vector<uint8> priority;       // 0: no pixel
         std::vector<uint8> special;        // SpriteSpecial
         std::vector<uint8> shadowOrWindow; // the sprite data's shadow / window bit
+        std::vector<uint8> ratio;          // the sprite data's colour calculation ratio index
     } m_sprite;
     uint64_t m_spritePixelsDifferent = 0, m_spriteLinesLeftToReference = 0;
     unsigned m_debugLeft = 12;

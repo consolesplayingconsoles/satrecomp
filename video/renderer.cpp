@@ -256,11 +256,13 @@ namespace {
     struct SpriteFormat {
         uint8 colorBits, priorityShift, priorityBits;
         bool shadowBit;
+        uint8 ratioShift, ratioBits; // where the sprite data keeps its colour calculation ratio index (no bits: always 0)
     };
     constexpr SpriteFormat kSpriteFormats[16] = {
-        {11, 14, 2, false}, {11, 13, 3, false}, {11, 14, 1, true}, {11, 13, 2, true}, {10, 13, 2, true}, {11, 12, 3, true},
-        {10, 12, 3, true},  {9, 12, 3, true},   {7, 7, 1, false},  {6, 7, 1, false},  {6, 6, 2, false},  {6, 0, 0, false},
-        {8, 7, 1, false},   {8, 7, 1, false},   {8, 6, 2, false},  {8, 0, 0, false},
+        {11, 14, 2, false, 11, 3}, {11, 13, 3, false, 11, 2}, {11, 14, 1, true, 11, 3}, {11, 13, 2, true, 11, 2},
+        {10, 13, 2, true, 10, 3},  {11, 12, 3, true, 11, 1},  {10, 12, 3, true, 10, 2}, {9, 12, 3, true, 9, 3},
+        {7, 7, 1, false, 0, 0},    {6, 7, 1, false, 6, 1},    {6, 6, 2, false, 0, 0},   {6, 0, 0, false, 6, 2},
+        {8, 7, 1, false, 0, 0},    {8, 7, 1, false, 6, 1},    {8, 6, 2, false, 0, 0},   {8, 0, 0, false, 6, 2},
     };
 } // namespace
 
@@ -279,6 +281,7 @@ bool Renderer::SpriteLine(uint32 y) {
     m_sprite.priority.resize(width);
     m_sprite.special.resize(width);
     m_sprite.shadowOrWindow.resize(width);
+    m_sprite.ratio.resize(width);
 
     // The framebuffer is narrower than a high resolution picture (each pixel shows twice), or twice as wide
     // as a normal one when it holds 8-bit pixels
@@ -299,7 +302,7 @@ bool Renderer::SpriteLine(uint32 y) {
         const uint32 xx = x << outputShift;
         const uint32 offset = (x << readShift) + y * regs1.fbSizeH;
         uint32 color = 0;
-        uint8 priority = 0, special = transparent, sow = 0;
+        uint8 priority = 0, special = transparent, sow = 0, ratio = 0;
         const uint16 word = static_cast<uint16>((fb[(offset * 2) & 0x3FFFE] << 8) | fb[((offset * 2) & 0x3FFFE) + 1]);
         if (window[xx]) {
             // (outside the sprite window: nothing)
@@ -322,6 +325,7 @@ bool Renderer::SpriteLine(uint32 y) {
             const uint32 colorData = raw & ((1u << format.colorBits) - 1);
             const uint32 priorityIndex = (raw >> format.priorityShift) & ((1u << format.priorityBits) - 1);
             sow = format.shadowBit && (raw & 0x8000);
+            ratio = static_cast<uint8>((raw >> format.ratioShift) & ((1u << format.ratioBits) - 1));
             // No pixel if everything but bit 15 is zero; a shadow if the colour is all ones but the lowest bit
             special = (raw & 0x7FFF) == 0                                ? transparent
                       : colorData == (1u << format.colorBits) - 2u ? shadow
@@ -344,6 +348,7 @@ bool Renderer::SpriteLine(uint32 y) {
             m_sprite.priority[xx + i] = priority;
             m_sprite.special[xx + i] = special;
             m_sprite.shadowOrWindow[xx + i] = sow;
+            m_sprite.ratio[xx + i] = ratio;
         }
     }
 
@@ -382,10 +387,9 @@ void Renderer::ComposeLine(uint32 y) {
     uint32 *out = &m_framebuffer[y * width];
     m_lines++;
 
-    bool supported = !regs2.spriteParams.colorCalcEnable && !regs2.backScreenParams.colorCalcEnable;
-    for (uint32 i = 0; i < 5; i++) {
-        supported = supported && !regs2.bgParams[i].colorCalcEnable;
-    }
+    // (done: a layer's colour calculation with the layer below it, added or mixed. Not done: the extended mode and
+    // the line colour screen's part in it)
+    bool supported = !regs2.colorCalc.extended && !regs2.lineScreenParams.colorCalcEnable;
     if (!supported) {
         if (m_check) {
             std::copy_n(&m_ref->Picture()[y * width], width, out);
@@ -445,24 +449,67 @@ void Renderer::ComposeLine(uint32 y) {
     const bool spriteWindow = regs2.spriteParams.useSpriteWindow;
     const auto normal = static_cast<uint8>(SpriteSpecial::Normal);
     for (uint32 x = 0; x < width; x++) {
-        uint32 top = kBack;
-        uint32 topPriority = 0;
-        if (state2.layerEnabled[kSprites] && m_sprite.special[x] == normal) {
-            // (a shadow pixel is not shown itself: it darkens what is below)
-            top = m_sprite.priority[x] ? static_cast<uint32>(kSprites) : top;
-            topPriority = m_sprite.priority[x];
-        }
-        for (uint32 layer = kRBG0; layer <= 5u; layer++) {
-            if (!state2.layerEnabled[layer]) {
-                continue;
-            }
-            const uint8 priority = layers[layer].priority[x];
+        // The layer shown, and the one below it (colour calculation blends the two)
+        uint32 top = kBack, second = kBack;
+        uint32 topPriority = 0, secondPriority = 0;
+        auto consider = [&](uint32 layer, uint32 priority) {
             if (priority > topPriority) { // (earlier layers win ties)
+                second = top;
+                secondPriority = topPriority;
                 top = layer;
                 topPriority = priority;
+            } else if (priority > secondPriority) {
+                second = layer;
+                secondPriority = priority;
+            }
+        };
+        if (state2.layerEnabled[kSprites] && m_sprite.special[x] == normal) {
+            // (a shadow pixel is not shown itself: it darkens what is below)
+            consider(kSprites, m_sprite.priority[x]);
+        }
+        for (uint32 layer = kRBG0; layer <= 5u; layer++) {
+            if (state2.layerEnabled[layer]) {
+                consider(layer, layers[layer].priority[x]);
             }
         }
-        Color888 color = top == kBack ? back : top == kSprites ? Color888{.u32 = m_sprite.color[x]} : Color888{.u32 = layers[top].color[x]};
+        auto colorOf = [&](uint32 layer) {
+            return layer == kBack ? back : layer == kSprites ? Color888{.u32 = m_sprite.color[x]} : Color888{.u32 = layers[layer].color[x]};
+        };
+        Color888 color = colorOf(top);
+
+        // Colour calculation: the layer shown is blended with the one below it, if it asks for that: added, or
+        // mixed in the ratio of one of the two layers' registers (the extended mode, the line colour screen's
+        // part in it are not done; counted above)
+        {
+            bool calc = false;
+            if (top == kSprites) {
+                const SpriteParams &sp = regs2.spriteParams;
+                const uint32 pri = m_sprite.priority[x];
+                calc = sp.colorCalcEnable &&
+                       (sp.colorCalcCond == 0 ? pri <= sp.colorCalcValue : sp.colorCalcCond == 1 ? pri == sp.colorCalcValue
+                                                                         : sp.colorCalcCond == 2 ? pri >= sp.colorCalcValue
+                                                                                                 : m_sprite.shadowOrWindow[x] != 0);
+            } else if (top != kBack) {
+                calc = regs2.bgParams[top - kRBG0].colorCalcEnable;
+            }
+            if (calc) {
+                const Color888 below = colorOf(second);
+                if (regs2.colorCalc.additive) {
+                    color.r = static_cast<uint8>(std::min<uint32>(255u, uint32{color.r} + below.r));
+                    color.g = static_cast<uint8>(std::min<uint32>(255u, uint32{color.g} + below.g));
+                    color.b = static_cast<uint8>(std::min<uint32>(255u, uint32{color.b} + below.b));
+                } else {
+                    const uint32 from = regs2.colorCalc.secondScreenRatio ? second : top;
+                    const uint32 ratio = from == kSprites ? regs2.spriteParams.colorCalcRatios[m_sprite.ratio[x] & 7]
+                                         : from == kBack  ? regs2.backScreenParams.colorCalcRatio
+                                                          : regs2.bgParams[from - kRBG0].colorCalcRatio;
+                    auto mix = [&](uint32 t, uint32 b) { return static_cast<uint8>(static_cast<sint32>(b) + (((static_cast<sint32>(t) - static_cast<sint32>(b)) * static_cast<sint32>(ratio)) >> 5)); };
+                    color.r = mix(color.r, below.r);
+                    color.g = mix(color.g, below.g);
+                    color.b = mix(color.b, below.b);
+                }
+            }
+        }
 
         // Sprite shadow: a shadow pixel of the sprite layer halves the brightness of the layer shown, if
         // that layer takes shadows
@@ -754,6 +801,18 @@ void Renderer::GpuEndFrame() {
             frame.shadow[i + 1] = regs2.bgParams[i].shadowEnable;
         }
         frame.shadow[6] = regs2.backScreenParams.shadowEnable;
+        frame.colorCalcEnable = regs2.spriteParams.colorCalcEnable ? 1u : 0u;
+        for (uint32 i = 0; i < 5; i++) {
+            frame.colorCalcEnable |= regs2.bgParams[i].colorCalcEnable ? 2u << i : 0u;
+            frame.colorCalcRatio[i + 1] = regs2.bgParams[i].colorCalcRatio;
+        }
+        frame.colorCalcRatio[6] = regs2.backScreenParams.colorCalcRatio;
+        frame.colorCalcCond = regs2.spriteParams.colorCalcCond;
+        frame.colorCalcValue = regs2.spriteParams.colorCalcValue;
+        frame.colorCalcMode = (regs2.colorCalc.additive ? 1u : 0u) | (regs2.colorCalc.secondScreenRatio ? 2u : 0u);
+        for (uint32 i = 0; i < 8; i++) {
+            frame.spriteRatio[i] = regs2.spriteParams.colorCalcRatios[i];
+        }
         m_floorLines.resize(512 * 8);
         m_vram2Image.assign(m_mem.vram2, m_mem.vram2 + 0x80000);
         frame.floor.lines = m_floorLines.data();
