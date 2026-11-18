@@ -5,7 +5,8 @@
 #
 #   satrecomp/tools/sync-toolkit.sh           copy the toolkit as committed in its own repository (HEAD)
 #                                             into satrecomp/ and record the commit
-#   satrecomp/tools/sync-toolkit.sh --check   fail if satrecomp/ is not what was recorded (make check-toolkit)
+#   satrecomp/tools/sync-toolkit.sh --check   fail if satrecomp/ is not what was recorded (make check-toolkit);
+#                                             for satrecomp/ a git checkout (a submodule), fail if it has changes
 #
 # Run from the game repository's top. A clone of the toolkit is looked for beside the game's repository
 # (../satrecomp), or where SATRECOMP says. The copy is committed in the game's repository, which so builds
@@ -35,6 +36,15 @@ main() {
     }
 
     if [ "${1:-}" = "--check" ]; then
+        # a git checkout of the toolkit (a submodule): git pins the commit, so the check is that nothing changed in it
+        if [ -e "$dest/.git" ]; then
+            if [ -n "$(git -C "$dest" status --porcelain --untracked-files=no)" ]; then
+                echo "sync-toolkit: satrecomp/ is a checkout with changes in it. Change the toolkit in its own repository." >&2
+                exit 1
+            fi
+            echo "satrecomp/: commit $(git -C "$dest" rev-parse HEAD) (a checkout)"
+            exit 0
+        fi
         [ -f "$record" ] || { echo "sync-toolkit: no $record; run satrecomp/tools/sync-toolkit.sh" >&2; exit 1; }
         commit=$(sed -n 's/^commit //p' "$record")
         if [ "$(hashes)" != "$(grep -v '^#' "$record" | grep -v '^commit ')" ]; then
